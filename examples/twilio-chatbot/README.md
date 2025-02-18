@@ -1,6 +1,6 @@
-# Twilio Chatbot
+# signalwire / websockets / gemini multimodal (text modality) / tts
 
-This project is a FastAPI-based chatbot that integrates with Twilio to handle WebSocket connections and provide real-time communication. The project includes endpoints for starting a call and handling WebSocket connections.
+This is an alternate version of the Twilio Chatbot.
 
 ## Table of Contents
 
@@ -59,14 +59,30 @@ This project is a FastAPI-based chatbot that integrates with Twilio to handle We
    ngrok http 8765
    ```
 
-2. **Update the Twilio Webhook**:
+2. **Update the Signalwire Webhook**:
 
-   - Go to your Twilio phone number's configuration page
-   - Under "Voice Configuration", in the "A call comes in" section:
-     - Select "Webhook" from the dropdown
-     - Enter your ngrok URL (e.g., http://<ngrok_url>)
-     - Ensure "HTTP POST" is selected
-   - Click Save at the bottom of the page
+   - Go to Signalwire's cXML / LaML configuration page
+     - Choose "Bins" submenu
+     - Create a LaML Bin with your ngrok URL (e.g., https://<ngrok_url>) like so:
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Redirect>https://abc123.ngrok.app</Redirect>
+</Response>
+```
+     - Click Save at the bottom of the page
+
+   - Go to your Signalwire phone number's configuration page
+   - Click on "Edit Settings"
+   - Under "Inbound Call Settings"
+     - Under the "Accept Incoming Calls As" section:
+       - Select "Voice Calls" from the dropdown
+     - Under the "Handle Calls Using" section:
+       - Select "LaML Webhooks" from the dropdown
+     - Under the "When a call comes in" section:
+       - Select the LaML Bin you created with your ngrok url
+:
+
 
 3. **Configure streams.xml**:
    - Copy the template file to create your local version:
@@ -74,7 +90,7 @@ This project is a FastAPI-based chatbot that integrates with Twilio to handle We
      cp templates/streams.xml.template templates/streams.xml
      ```
    - In `templates/streams.xml`, replace `<your server url>` with your ngrok URL (without `https://`)
-   - The final URL should look like: `wss://abc123.ngrok.io/ws`
+   - The final URL should look like: `wss://abc123.ngrok.app/ws`
 
 ## Running the Application
 
@@ -89,52 +105,7 @@ Choose one of these two methods to run the application:
 python server.py
 ```
 
-### Using Docker (Option 2)
-
-1. **Build the Docker image**:
-
-   ```sh
-   docker build -t twilio-chatbot .
-   ```
-
-2. **Run the Docker container**:
-   ```sh
-   docker run -it --rm -p 8765:8765 twilio-chatbot
-   ```
-
-The server will start on port 8765. Keep this running while you test with Twilio.
-
 ## Usage
 
-To start a call, simply make a call to your configured Twilio phone number. The webhook URL will direct the call to your FastAPI application, which will handle it accordingly.
+Call to your configured Signalwire phone number. The webhook URL will direct the call to your FastAPI application, which will handle it accordingly.
 
-## Testing
-
-It is also possible to automatically test the server without making phone calls by using a software client.
-
-First, update `templates/streams.xml` to point to your server's websocket endpoint. For example:
-
-```
-<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Connect>
-    <Stream url="ws://localhost:8765/ws"></Stream>
-  </Connect>
-  <Pause length="40"/>
-</Response>
-```
-
-Then, start the server with `-t` to indicate we are testing:
-
-```sh
-# Make sure you’re in the project directory and your virtual environment is activated
-python server.py -t
-```
-
-Finally, just point the client to the server's URL:
-
-```sh
-python client.py -u http://localhost:8765 -c 2
-```
-
-where `-c` allows you to create multiple concurrent clients.

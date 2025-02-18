@@ -23,7 +23,7 @@ from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.processors.audio.audio_buffer_processor import AudioBufferProcessor
 from pipecat.serializers.twilio import TwilioFrameSerializer
 from pipecat.services.cartesia import CartesiaTTSService
-from pipecat.services.deepgram import DeepgramSTTService
+from pipecat.services.gemini_multimodal_live.gemini import GeminiMultimodalLiveLLMService, GeminiMultimodalModalities
 from pipecat.services.openai import OpenAILLMService
 from pipecat.transports.network.fastapi_websocket import (
     FastAPIWebsocketParams,
@@ -34,7 +34,6 @@ load_dotenv(override=True)
 
 logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
-
 
 async def save_audio(server_name: str, audio: bytes, sample_rate: int, num_channels: int):
     if len(audio) > 0:
@@ -68,19 +67,23 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
         ),
     )
 
-    llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
-
-    stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"), audio_passthrough=True)
+    llm = GeminiMultimodalLiveLLMService(
+        api_key=os.getenv("GOOGLE_API_KEY"),
+    )
+    ##### set Text modality
+    llm.set_model_modalities(
+        GeminiMultimodalModalities.TEXT,
+    )
 
     tts = CartesiaTTSService(
         api_key=os.getenv("CARTESIA_API_KEY"),
-        voice_id="79a125e8-cd45-4c13-8a67-188112f4dd22",  # British Lady
-        push_silence_after_stop=testing,
+        voice_id="a0e99841-438c-4a64-b679-ae501e7d6091",  # Barbershop man
+        push_silence_after_stop=True,
     )
 
     messages = [
         {
-            "role": "system",
+            "role": "user",
             "content": "You are an elementary teacher in an audio call. Your output will be converted to audio so don't include special characters in your answers. Respond to what the student said in a short short sentence.",
         },
     ]
@@ -95,7 +98,6 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
     pipeline = Pipeline(
         [
             transport.input(),  # Websocket input from client
-            stt,  # Speech-To-Text
             context_aggregator.user(),
             llm,  # LLM
             tts,  # Text-To-Speech
