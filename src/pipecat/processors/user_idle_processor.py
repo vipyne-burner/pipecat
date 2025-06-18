@@ -15,6 +15,7 @@ from pipecat.frames.frames import (
     Frame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
+    TranscriptionFrame
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
@@ -124,6 +125,10 @@ class UserIdleProcessor(FrameProcessor):
             direction: Direction of the frame flow
         """
         await super().process_frame(frame, direction)
+
+        if isinstance(frame, TranscriptionFrame):
+            print(f"_____user_idle_processor.py * : TranscriptionFrame")
+            await self.push_frame(frame, direction)
 
         # Check for end frames before processing
         if isinstance(frame, (EndFrame, CancelFrame)):

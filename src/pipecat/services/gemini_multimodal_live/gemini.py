@@ -634,9 +634,8 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
         return genai.Client(
             vertexai=True,
             project=vertex_params.project_id,
-            location=vertex_params.location,
-            # location="us-central1",
-            # http_options={"api_version": "v1beta"}
+            # "gemini-2.0-flash-live-preview-04-09" is only available in us-central1
+            location="us-central1", # location=vertex_params.location,
         )
 
     def set_audio_input_paused(self, paused: bool):
@@ -736,10 +735,13 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
         await super().process_frame(frame, direction)
 
         if isinstance(frame, TranscriptionFrame):
+            print(f"___#########__gemini.py * TranscriptionFrame frame.text: {frame.text}")
+            print(f"_____gemini.py * self._context: {self._context}")
+            self._receive_task = self.create_task(self._receive_task_handler(self._context))
             await self.push_frame(frame, direction)
 
         elif isinstance(frame, OpenAILLMContextFrame):
-            print(f"_____gemini.py * Vertex AI : {frame.context}")
+            print(f"_____gemini.py * Vertex AI OpenAILLMContextFrame: {frame.context}")
             context: GeminiMultimodalLiveContext = GeminiMultimodalLiveContext.upgrade(
                 frame.context
             )
@@ -771,7 +773,7 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
         ### audio parameter is not supported in Vertex AI.
         ### maybe use 'media' ?
         elif isinstance(frame, InputAudioRawFrame):
-            await self._send_user_audio(frame)
+            # await self._send_user_audio(frame)
             await self.push_frame(frame, direction)
 
         elif isinstance(frame, InputImageRawFrame):
@@ -780,9 +782,6 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
         elif isinstance(frame, StartInterruptionFrame):
             await self._handle_interruption()
             await self.push_frame(frame, direction)
-
-        # elif isinstance(frame, TranscriptionFrame)
-        # await self.push_frame(frame, direction)
 
         elif isinstance(frame, UserStartedSpeakingFrame):
             await self._handle_user_started_speaking(frame)
@@ -853,7 +852,6 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
         #     return
         self._user_audio_buffer.extend(frame.audio)
         
-        print(f"_____gemini.py * : 1")
         async with self._client.aio.live.connect(
             model=self._model_name,
             # config=self._config,
@@ -862,18 +860,14 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
             self._is_text_modality = GeminiMultimodalModalities.TEXT == self._settings["modalities"]
             self._is_audio_modality = GeminiMultimodalModalities.AUDIO == self._settings["modalities"]
 
-            print(f"_____gemini.py * : 2")
             data = base64.b64encode(self._user_audio_buffer).decode("utf-8")
             try:
-                print(f"_____gemini.py * : 3")
                 await session.send_realtime_input(
                     media=Blob(data=data, mime_type=f"audio/pcm;rate={self._sample_rate}")
                     # audio=Blob(data=frame.audio, mime_type="audio/pcm;rate=16000")
                 )
-                print(f"_____gemini.py * : 4")
 
                 async for message in session.receive():
-                    print(f"_____gemini.py * : 5")
                     print(f"_____gemini.py * _send_user_audio message: {message}")
                     if message.text:
                         await self.push_frame(LLMTextFrame(message.text))
