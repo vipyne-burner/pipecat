@@ -735,7 +735,7 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
         await super().process_frame(frame, direction)
 
         if isinstance(frame, TranscriptionFrame):
-            print(f"___#########__gemini.py * TranscriptionFrame frame.text: {frame.text}")
+            print(f"___#### # # # # #######__gemini.py * TranscriptionFrame frame.text: {frame.text}")
             print(f"_____gemini.py * self._context: {self._context}")
             self._receive_task = self.create_task(self._receive_task_handler(self._context))
             await self.push_frame(frame, direction)
