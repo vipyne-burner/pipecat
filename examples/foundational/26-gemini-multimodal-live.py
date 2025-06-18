@@ -16,7 +16,16 @@ from pipecat.frames.frames import LLMMessagesAppendFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.services.gemini_multimodal_live.gemini import GeminiMultimodalLiveLLMService
+from pipecat.services.gemini_multimodal_live.gemini import (
+    InputParams,
+    GeminiMultimodalModalities,
+    GeminiMultimodalLiveLLMService,
+    VertexAIGeminiMultimodalLiveLLMService,
+)
+from pipecat.services.google.llm_vertex import (
+    GoogleVertexLLMService,
+)
+
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.network.fastapi_websocket import FastAPIWebsocketParams
 from pipecat.transports.services.daily import DailyParams
@@ -64,10 +73,22 @@ async def run_example(transport: BaseTransport, _: argparse.Namespace, handle_si
     Respond to what the user said in a creative and helpful way.
     """
 
-    llm = GeminiMultimodalLiveLLMService(
-        api_key=os.getenv("GOOGLE_API_KEY"),
-        system_instruction=system_instruction,
+    # llm = GeminiMultimodalLiveLLMService(
+    #     api_key=os.getenv("GOOGLE_API_KEY"),
+    #     system_instruction=system_instruction,
+    #     voice_id="Puck",  # Aoede, Charon, Fenrir, Kore, Puck
+    # )
+
+
+    llm = VertexAIGeminiMultimodalLiveLLMService(
+        credentials=os.getenv("GOOGLE_TEST_CREDENTIALS"),
+        vertex_params=GoogleVertexLLMService.InputParams(
+            project_id=os.getenv("GOOGLE_CLOUD_PROJECT_ID"), location="us-central1"
+        ),
+        params=InputParams(modalities=GeminiMultimodalModalities.AUDIO),
+        # params=InputParams(modalities=GeminiMultimodalModalities.TEXT),
         voice_id="Puck",  # Aoede, Charon, Fenrir, Kore, Puck
+        model="gemini-2.0-flash-live-preview-04-09",
     )
 
     # Build the pipeline

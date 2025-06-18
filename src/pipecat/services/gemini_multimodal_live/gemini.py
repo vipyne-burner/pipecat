@@ -68,7 +68,7 @@ from . import events
 
 try:
     from google import genai
-    from google.genai.types import Content, LiveClientContent, LiveConnectConfig, Modality, Part
+    from google.genai.types import Blob, Content, LiveClientContent, LiveConnectConfig, Modality, Part
 except ModuleNotFoundError as e:
     logger.error(f"Exception: {e}")
     logger.error("In order to use Google AI, you need to `pip install pipecat-ai[google]`.")
@@ -596,6 +596,9 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
         )
         self._vad_params = params.vad
 
+        self._is_text_modality = GeminiMultimodalModalities.TEXT == params.modalities
+        self._is_audio_modality = GeminiMultimodalModalities.AUDIO == params.modalities
+
         self._settings = {
             "frequency_penalty": params.frequency_penalty,
             "max_tokens": params.max_tokens,
@@ -765,9 +768,12 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
                 self._receive_task = self.create_task(self._receive_task_handler(self._context))
             await self.push_frame(frame, direction)
 
+        ### audio parameter is not supported in Vertex AI.
+        ### maybe use 'media' ?
         elif isinstance(frame, InputAudioRawFrame):
-            # await self._send_user_audio(frame)
+            await self._send_user_audio(frame)
             await self.push_frame(frame, direction)
+
         elif isinstance(frame, InputImageRawFrame):
             await self._send_user_video(frame)
             await self.push_frame(frame, direction)
@@ -809,22 +815,13 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
             # config=self._config,
             config=LiveConnectConfig(response_modalities=[self._settings["modalities"]]),
         ) as session:
-            text_modality = GeminiMultimodalModalities.TEXT == self._settings["modalities"]
-            audio_modality = GeminiMultimodalModalities.AUDIO == self._settings["modalities"]
 
             try:
-                if text_modality:
+                if self._is_text_modality:
                     print(f"_____gemini.py * GeminiMultimodalModalities.TEXT - send_client_content")
                     await session.send_client_content(turns=self._context.messages)
-                elif audio_modality:
-                    print(
-                        f"WIP_____gemini.py * GeminiMultimodalModalities.AUDIO - send_realtime_input"
-                    )
-                    # await session.send_realtime_input(
-                    #     audio=types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
-                    # )
-
                 else:
+                    # audio modality not supported in vertex yet :thinking:
                     pass
 
                 async for message in session.receive():
@@ -833,49 +830,11 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
 
                     elif message.server_content:
                         if message.server_content.turn_complete:
-                            # if text_modality:
-                            if audio_modality:
-                                await self.push_frame(TTSStoppedFrame())
+                            # if self._is_text_modality:
+                            # if self._is_audio_modality:
+                            #     await self.push_frame(TTSStoppedFrame())
                             await self.push_frame(LLMFullResponseEndFrame())
                             self._bot_is_speaking = False
-
-                            ## TODO/WIP audio
-                            # elif message.audio:
-                            # https://cloud.google.com/vertex-ai/generative-ai/docs/live-api#:~:text=Vertex%20AI%20Studio.-,Context%20window,inputs%2C%20model%20outputs%2C%20etc.
-                            # if (
-                            #     message.server_content.model_turn
-                            #     and message.server_content.model_turn.parts
-                            # ):
-                            #     audio_data = []
-                            #     for part in message.server_content.model_turn.parts:
-                            #         if part.inline_data:
-                            #             audio_data.append(
-                            #                 np.frombuffer(part.inline_data.data, dtype=np.int16)
-                            #             )
-
-                            # inline_data = part.inlineData
-                            # if not inline_data:
-                            #     return
-                            # if inline_data.mimeType != f"audio/pcm;rate={self._sample_rate}":
-                            #     logger.warning(f"Unrecognized server_content format {inline_data.mimeType}")
-                            #     return
-
-                            # audio = base64.b64decode(inline_data.data)
-                            # if not audio:
-                            #     return
-
-                            # if not self._bot_is_speaking:
-                            #     self._bot_is_speaking = True
-                            #     await self.push_frame(TTSStartedFrame())
-                            #     await self.push_frame(LLMFullResponseStartFrame())
-
-                            # self._bot_audio_buffer.extend(audio)
-                            # frame = TTSAudioRawFrame(
-                            #     audio=audio,
-                            #     sample_rate=self._sample_rate,
-                            #     num_channels=1,
-                            # )
-                            # await self.push_frame(frame)
 
                     else:
                         pass
@@ -886,21 +845,84 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
     #
     #
 
+    ### audio parameter is not supported in Vertex AI.
     async def _send_user_audio(self, frame):
-        if self._audio_input_paused:
-            return
-        # Send all audio to Gemini
-        evt = events.AudioInputMessage.from_raw_audio(frame.audio, frame.sample_rate)
-        await self.send_client_event(evt)
-        # Manage a buffer of audio to use for transcription
-        audio = frame.audio
-        if self._user_is_speaking:
-            self._user_audio_buffer.extend(audio)
-        else:
-            # Keep 1/2 second of audio in the buffer even when not speaking.
-            self._user_audio_buffer.extend(audio)
-            length = int((frame.sample_rate * frame.num_channels * 2) * 0.5)
-            self._user_audio_buffer = self._user_audio_buffer[-length:]
+        print(f"_____gemini.py * _send_user_audio::::")
+        # return
+        # if self._audio_input_paused:
+        #     return
+        self._user_audio_buffer.extend(frame.audio)
+        
+        print(f"_____gemini.py * : 1")
+        async with self._client.aio.live.connect(
+            model=self._model_name,
+            # config=self._config,
+            config=LiveConnectConfig(response_modalities=[GeminiMultimodalModalities.AUDIO]),
+        ) as session:
+            self._is_text_modality = GeminiMultimodalModalities.TEXT == self._settings["modalities"]
+            self._is_audio_modality = GeminiMultimodalModalities.AUDIO == self._settings["modalities"]
+
+            print(f"_____gemini.py * : 2")
+            data = base64.b64encode(self._user_audio_buffer).decode("utf-8")
+            try:
+                print(f"_____gemini.py * : 3")
+                await session.send_realtime_input(
+                    media=Blob(data=data, mime_type=f"audio/pcm;rate={self._sample_rate}")
+                    # audio=Blob(data=frame.audio, mime_type="audio/pcm;rate=16000")
+                )
+                print(f"_____gemini.py * : 4")
+
+                async for message in session.receive():
+                    print(f"_____gemini.py * : 5")
+                    print(f"_____gemini.py * _send_user_audio message: {message}")
+                    if message.text:
+                        await self.push_frame(LLMTextFrame(message.text))
+
+                    elif message.server_content:
+                        if message.server_content.turn_complete:
+                            if audio_modality:
+                                await self.push_frame(TTSStoppedFrame())
+                            await self.push_frame(LLMFullResponseEndFrame())
+                            self._bot_is_speaking = False
+
+                    # TODO/WIP audio
+                    # https://cloud.google.com/vertex-ai/generative-ai/docs/live-api#:~:text=Vertex%20AI%20Studio.-,Context%20window,inputs%2C%20model%20outputs%2C%20etc.
+                    # elif message.media:#?
+                    elif message.audio:
+                        print(f"_____gemini.py * message.audio: {message.audio}")
+
+                        audio = base64.b64decode(message.audio)
+                        if not audio:
+                            return
+
+                        if not self._bot_is_speaking:
+                            self._bot_is_speaking = True
+                            await self.push_frame(TTSStartedFrame())
+                            await self.push_frame(LLMFullResponseStartFrame())
+
+                        self._bot_audio_buffer.extend(audio)
+                        frame = TTSAudioRawFrame(
+                            audio=audio,
+                            sample_rate=self._sample_rate,
+                            num_channels=1,
+                        )
+                        await self.push_frame(frame)
+
+                    else:
+                        pass
+            except Exception as e:
+                print(f"_____gemini.py * _send_user_audio error: {e}")
+        print(f"_____gemini.py * : _send_user_audio end end end end end end end _____")
+
+        # # Manage a buffer of audio to use for transcription
+        # audio = frame.audio
+        # if self._user_is_speaking:
+        #     self._user_audio_buffer.extend(audio)
+        # else:
+        #     # Keep 1/2 second of audio in the buffer even when not speaking.
+        #     self._user_audio_buffer.extend(audio)
+        #     length = int((frame.sample_rate * frame.num_channels * 2) * 0.5)
+        #     self._user_audio_buffer = self._user_audio_buffer[-length:]
 
     async def _send_user_video(self, frame):
         if self._video_input_paused:
