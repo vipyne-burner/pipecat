@@ -617,7 +617,7 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
         }
 
         # self._config = LiveConnectConfig(
-        #     response_modalities=[params.modalities],
+        #     response_modalities=[params.modalities], ["AUDIO"],  # We want spoken responses
         #         speech_config=SpeechConfig(
         #         voice_config=VoiceConfig(
         #             prebuilt_voice_config=PrebuiltVoiceConfig(
@@ -736,7 +736,7 @@ class VertexAIGeminiMultimodalLiveLLMService(LLMService):
 
         if isinstance(frame, TranscriptionFrame):
             print(f"___#### # # # # #######__gemini.py * TranscriptionFrame frame.text: {frame.text}")
-            print(f"_____gemini.py * self._context: {self._context}")
+            print(f"_____                                    gemini.py * self._context: {self._context}")
             self._receive_task = self.create_task(self._receive_task_handler(self._context))
             await self.push_frame(frame, direction)
 
