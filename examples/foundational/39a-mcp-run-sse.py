@@ -11,6 +11,7 @@ import sys
 import aiohttp
 from dotenv import load_dotenv
 from loguru import logger
+from mcp.client.session_group import SseServerParameters
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.pipeline.pipeline import Pipeline
@@ -54,7 +55,7 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection, _: argparse.Namespac
 
     try:
         # https://docs.mcp.run/integrating/tutorials/mcp-run-sse-openai-agents/
-        mcp = MCPClient(server_params=os.getenv("MCP_RUN_SSE_URL"))
+        mcp = MCPClient(server_params=SseServerParameters(url=os.getenv("MCP_RUN_SSE_URL")))
     except Exception as e:
         logger.error(f"error setting up mcp")
         logger.exception("error trace:")
