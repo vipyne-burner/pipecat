@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -9,7 +9,7 @@ from pipecat.utils.base_object import BaseObject
 
 try:
     from mcp import ClientSession, StdioServerParameters
-    from mcp.client.session_group import SseServerParameters
+    from mcp.client.session_group import SseServerParameters, StreamableHttpParameters
     from mcp.client.session import ClientSession
     from mcp.client.sse import sse_client
     from mcp.client.stdio import stdio_client
@@ -23,15 +23,12 @@ except ModuleNotFoundError as e:
 class MCPClient(BaseObject):
     def __init__(
         self,
-        server_params: Union[StdioServerParameters, SseServerParameters],
-        streamable_http: bool = False,
-        additional_headers: Optional[Dict[str, str]] = None,
+        server_params: Tuple[StdioServerParameters, SseServerParameters, StreamableHttpParameters],
         **kwargs,
     ):
         super().__init__(**kwargs)
         self._server_params = server_params
         self._session = ClientSession
-        self._additional_headers = additional_headers or {}
 
         if isinstance(server_params, StdioServerParameters):
             self._client = stdio_client
@@ -39,7 +36,7 @@ class MCPClient(BaseObject):
         elif isinstance(server_params, SseServerParameters):
             self._client = sse_client
             self._register_tools = self._sse_register_tools
-        elif isinstance(server_params, str) and streamable_http:
+        elif isinstance(server_params, StreamableHttpParameters):
             self._client = streamablehttp_client
             self._register_tools = self._streamable_http_register_tools
         else:
@@ -80,7 +77,7 @@ class MCPClient(BaseObject):
         return schema
 
     async def _sse_register_tools(self, llm) -> ToolsSchema:
-        """Register all available mcp.run tools with the LLM service.
+        """Register all available mcp tools with the LLM service.
         Args:
             llm: The Pipecat LLM service to register tools with
         Returns:
@@ -95,34 +92,19 @@ class MCPClient(BaseObject):
             context: any,
             result_callback: any,
         ) -> None:
-            """Wrapper for mcp.run tool calls to match Pipecat's function call interface."""
+            """Wrapper for mcp tool calls to match Pipecat's function call interface."""
             logger.debug(f"Executing tool '{function_name}' with call ID: {tool_call_id}")
             logger.trace(f"Tool arguments: {json.dumps(arguments, indent=2)}")
             try:
-                if self._additional_headers:
-                    async with self._client(
-                        url=self._server_params.url,
-                        headers=self._additional_headers,
-                        timeout=self._server_params.timeout,
-                        sse_read_timeout=self._server_params.sse_read_timeout,
-                    ) as (read, write):
-                        async with self._session(read, write) as session:
-                            await session.initialize()
-                            await self._call_tool(
-                                session, function_name, arguments, result_callback
-                            )
-                else:
-                    async with self._client(
-                        url=self._server_params.url,
-                        headers=self._server_params.headers,
-                        timeout=self._server_params.timeout,
-                        sse_read_timeout=self._server_params.sse_read_timeout,
-                    ) as (read, write):
-                        async with self._session(read, write) as session:
-                            await session.initialize()
-                            await self._call_tool(
-                                session, function_name, arguments, result_callback
-                            )
+                async with self._client(
+                    url=self._server_params.url,
+                    headers=self._server_params.headers,
+                    timeout=self._server_params.timeout,
+                    sse_read_timeout=self._server_params.sse_read_timeout,
+                ) as (read, write):
+                    async with self._session(read, write) as session:
+                        await session.initialize()
+                        await self._call_tool(session, function_name, arguments, result_callback)
             except Exception as e:
                 error_msg = f"Error calling mcp tool {function_name}: {str(e)}"
                 logger.error(error_msg)
@@ -130,28 +112,22 @@ class MCPClient(BaseObject):
                 await result_callback(error_msg)
 
         logger.debug(f"SSE server parameters: {self._server_params}")
-        logger.debug("Starting registration of mcp.run tools")
+        logger.debug("Starting registration of mcp tools")
         tool_schemas: List[FunctionSchema] = []
 
-        if self._additional_headers:
-            # For SSE, headers might be passed differently - check documentation
-            async with self._client(self._server_params, headers=self._additional_headers) as (
-                read,
-                write,
-            ):
-                async with self._session(read, write) as session:
-                    await session.initialize()
-                    tools_schema = await self._list_tools(session, mcp_tool_wrapper, llm)
-                    return tools_schema
-        else:
-            async with self._client(self._server_params) as (read, write):
-                async with self._session(read, write) as session:
-                    await session.initialize()
-                    tools_schema = await self._list_tools(session, mcp_tool_wrapper, llm)
-                    return tools_schema
+        async with self._client(
+            url=self._server_params.url,
+            headers=self._server_params.headers,
+            timeout=self._server_params.timeout,
+            sse_read_timeout=self._server_params.sse_read_timeout,
+        ) as (read, write):
+            async with self._session(read, write) as session:
+                await session.initialize()
+                tools_schema = await self._list_tools(session, mcp_tool_wrapper, llm)
+                return tools_schema
 
     async def _stdio_register_tools(self, llm) -> ToolsSchema:
-        """Register all available mcp.run tools with the LLM service.
+        """Register all available mcp tools with the LLM service.
         Args:
             llm: The Pipecat LLM service to register tools with
         Returns:
@@ -166,7 +142,7 @@ class MCPClient(BaseObject):
             context: any,
             result_callback: any,
         ) -> None:
-            """Wrapper for mcp.run tool calls to match Pipecat's function call interface."""
+            """Wrapper for mcp tool calls to match Pipecat's function call interface."""
             logger.debug(f"Executing tool '{function_name}' with call ID: {tool_call_id}")
             logger.trace(f"Tool arguments: {json.dumps(arguments, indent=2)}")
             try:
@@ -180,7 +156,7 @@ class MCPClient(BaseObject):
                 logger.exception("Full exception details:")
                 await result_callback(error_msg)
 
-        logger.debug("Starting registration of mcp.run tools")
+        logger.debug("Starting registration of mcp tools")
 
         async with self._client(self._server_params) as streams:
             async with self._session(streams[0], streams[1]) as session:
@@ -189,7 +165,7 @@ class MCPClient(BaseObject):
                 return tools_schema
 
     async def _streamable_http_register_tools(self, llm) -> ToolsSchema:
-        """Register all available mcp.run tools with the LLM service using streamable HTTP.
+        """Register all available mcp tools with the LLM service using streamable HTTP.
         Args:
             llm: The Pipecat LLM service to register tools with
         Returns:
@@ -204,11 +180,18 @@ class MCPClient(BaseObject):
             context: any,
             result_callback: any,
         ) -> None:
-            """Wrapper for mcp.run tool calls to match Pipecat's function call interface."""
+            """Wrapper for mcp tool calls to match Pipecat's function call interface."""
             logger.debug(f"Executing tool '{function_name}' with call ID: {tool_call_id}")
             logger.trace(f"Tool arguments: {json.dumps(arguments, indent=2)}")
             try:
-                async with self._client(self._server_params, headers=self._additional_headers) as (
+                async with self._client(
+                    url=self._server_params.url,
+                    headers=self._server_params.headers,
+                    timeout=self._server_params.timeout,
+                    sse_read_timeout=self._server_params.sse_read_timeout,
+                    terminate_on_close=self._server_params.terminate_on_close,
+                    auth=self._server_params.auth,
+                ) as (
                     read_stream,
                     write_stream,
                     _,
@@ -222,9 +205,16 @@ class MCPClient(BaseObject):
                 logger.exception("Full exception details:")
                 await result_callback(error_msg)
 
-        logger.debug("Starting registration of mcp.run tools using streamable HTTP")
+        logger.debug("Starting registration of mcp tools using streamable HTTP")
 
-        async with self._client(self._server_params, headers=self._additional_headers) as (
+        async with self._client(
+            url=self._server_params.url,
+            headers=self._server_params.headers,
+            timeout=self._server_params.timeout,
+            sse_read_timeout=self._server_params.sse_read_timeout,
+            terminate_on_close=self._server_params.terminate_on_close,
+            auth=self._server_params.auth,
+        ) as (
             read_stream,
             write_stream,
             _,
