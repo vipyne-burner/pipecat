@@ -8,14 +8,19 @@ import audioop
 
 import numpy as np
 import pyloudnorm as pyln
-import soxr
 
 from pipecat.audio.resamplers.base_audio_resampler import BaseAudioResampler
+from pipecat.audio.resamplers.base_stream_audio_resampler import BaseStreamAudioResampler
 from pipecat.audio.resamplers.soxr_resampler import SOXRAudioResampler
+from pipecat.audio.resamplers.soxr_stream_resampler import SOXRStreamAudioResampler
 
 
 def create_default_resampler(**kwargs) -> BaseAudioResampler:
     return SOXRAudioResampler(**kwargs)
+
+
+def create_stream_resampler(in_rate: float, out_rate: float) -> BaseStreamAudioResampler:
+    return SOXRStreamAudioResampler(in_rate=in_rate, out_rate=out_rate)
 
 
 def mix_audio(audio1: bytes, audio2: bytes) -> bytes:

@@ -15,7 +15,7 @@ from loguru import logger
 from PIL import Image
 
 from pipecat.audio.mixers.base_audio_mixer import BaseAudioMixer
-from pipecat.audio.utils import create_default_resampler
+from pipecat.audio.utils import create_stream_resampler
 from pipecat.frames.frames import (
     BotSpeakingFrame,
     BotStartedSpeakingFrame,
@@ -248,7 +248,7 @@ class BaseOutputTransport(FrameProcessor):
             self._audio_buffer = bytearray()
 
             # This will be used to resample incoming audio to the output sample rate.
-            self._resampler = create_default_resampler()
+            self._resampler = None
 
             # The user can provide a single mixer, to be used by the default
             # destination, or a destination/mixer mapping.
@@ -338,11 +338,14 @@ class BaseOutputTransport(FrameProcessor):
             if not self._params.audio_out_enabled:
                 return
 
+            if self._resampler is None:
+                self._resampler = create_stream_resampler(
+                    in_rate=frame.sample_rate, out_rate=self._sample_rate
+                )
+
             # We might need to resample if incoming audio doesn't match the
             # transport sample rate.
-            resampled = await self._resampler.resample(
-                frame.audio, frame.sample_rate, self._sample_rate
-            )
+            resampled = await self._resampler.resample(frame.audio)
 
             cls = type(frame)
             self._audio_buffer.extend(resampled)
