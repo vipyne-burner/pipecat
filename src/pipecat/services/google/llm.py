@@ -380,18 +380,48 @@ class GoogleLLMContext(OpenAILLMContext):
         System messages are stored separately and return None.
 
         Args:
-            message: Message in standard format:
-                {
-                    "role": "user/assistant/system/tool",
-                    "content": str | [{"type": "text/image_url", ...}] | None,
-                    "tool_calls": [{"function": {"name": str, "arguments": str}}]
-                }
+            message: Message in standard format.
 
         Returns:
-            Content object with:
-                - role: "user" or "model" (converted from "assistant")
-                - parts: List[Part] containing text, inline_data, or function calls
-            Returns None for system messages.
+            Content object with role and parts, or None for system messages.
+
+        Examples:
+            Standard text message::
+
+                {
+                    "role": "user",
+                    "content": "Hello there"
+                }
+
+            Converts to Google Content with::
+
+                Content(
+                    role="user",
+                    parts=[Part(text="Hello there")]
+                )
+
+            Standard function call message::
+
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "search",
+                                "arguments": '{"query": "test"}'
+                            }
+                        }
+                    ]
+                }
+
+            Converts to Google Content with::
+
+                Content(
+                    role="model",
+                    parts=[Part(function_call=FunctionCall(name="search", args={"query": "test"}))]
+                )
+
+            System message returns None and stores content in self.system_message.
         """
         role = message["role"]
         content = message.get("content", [])
@@ -447,21 +477,73 @@ class GoogleLLMContext(OpenAILLMContext):
         Handles text, images, and function calls from Google's Content/Part objects.
 
         Args:
-            obj: Google Content object with:
-                - role: "model" (converted to "assistant") or "user"
-                - parts: List[Part] containing text, inline_data, or function calls
+            obj: Google Content object with role and parts.
 
         Returns:
-            List of messages in standard format:
-            [
-                {
-                    "role": "user/assistant/tool",
-                    "content": [
-                        {"type": "text", "text": str} |
-                        {"type": "image_url", "image_url": {"url": str}}
-                    ]
-                }
-            ]
+            List containing a single message in standard format.
+
+        Examples:
+            Google Content with text::
+
+                Content(
+                    role="user",
+                    parts=[Part(text="Hello")]
+                )
+
+            Converts to::
+
+                [
+                    {
+                        "role": "user",
+                        "content": [{"type": "text", "text": "Hello"}]
+                    }
+                ]
+
+            Google Content with function call::
+
+                Content(
+                    role="model",
+                    parts=[Part(function_call=FunctionCall(name="search", args={"q": "test"}))]
+                )
+
+            Converts to::
+
+                [
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "search",
+                                "type": "function",
+                                "function": {
+                                    "name": "search",
+                                    "arguments": '{"q": "test"}'
+                                }
+                            }
+                        ]
+                    }
+                ]
+
+            Google Content with image::
+
+                Content(
+                    role="user",
+                    parts=[Part(inline_data=Blob(mime_type="image/jpeg", data=bytes_data))]
+                )
+
+            Converts to::
+
+                [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": "data:image/jpeg;base64,<encoded_data>"}
+                            }
+                        ]
+                    }
+                ]
         """
         msg = {"role": obj.role, "content": []}
         if msg["role"] == "model":
@@ -638,6 +720,20 @@ class GoogleLLMService(LLMService):
     def _create_client(self, api_key: str):
         self._client = genai.Client(api_key=api_key)
 
+    def _maybe_unset_thinking_budget(self, generation_params: Dict[str, Any]):
+        try:
+            # There's no way to introspect on model capabilities, so
+            # to check for models that we know default to thinkin on
+            # and can be configured to turn it off.
+            if not self._model_name.startswith("gemini-2.5-flash"):
+                return
+            # If thinking_config is already set, don't override it.
+            if "thinking_config" in generation_params:
+                return
+            generation_params.setdefault("thinking_config", {})["thinking_budget"] = 0
+        except Exception as e:
+            logger.exception(f"Failed to unset thinking budget: {e}")
+
     @traced_llm
     async def _process_context(self, context: OpenAILLMContext):
         await self.push_frame(LLMFullResponseStartFrame())
@@ -645,6 +741,8 @@ class GoogleLLMService(LLMService):
         prompt_tokens = 0
         completion_tokens = 0
         total_tokens = 0
+        cache_read_input_tokens = 0
+        reasoning_tokens = 0
 
         grounding_metadata = None
         search_result = ""
@@ -684,6 +782,12 @@ class GoogleLLMService(LLMService):
                 if v is not None
             }
 
+            if self._settings["extra"]:
+                generation_params.update(self._settings["extra"])
+
+            # possibly modify generation_params (in place) to set thinking to off by default
+            self._maybe_unset_thinking_budget(generation_params)
+
             generation_config = (
                 GenerateContentConfig(**generation_params) if generation_params else None
             )
@@ -703,6 +807,8 @@ class GoogleLLMService(LLMService):
                     prompt_tokens += chunk.usage_metadata.prompt_token_count or 0
                     completion_tokens += chunk.usage_metadata.candidates_token_count or 0
                     total_tokens += chunk.usage_metadata.total_token_count or 0
+                    cache_read_input_tokens += chunk.usage_metadata.cached_content_token_count or 0
+                    reasoning_tokens += chunk.usage_metadata.thoughts_token_count or 0
 
                 if not chunk.candidates:
                     continue
@@ -784,6 +890,8 @@ class GoogleLLMService(LLMService):
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
                     total_tokens=total_tokens,
+                    cache_read_input_tokens=cache_read_input_tokens,
+                    reasoning_tokens=reasoning_tokens,
                 )
             )
             await self.push_frame(LLMFullResponseEndFrame())

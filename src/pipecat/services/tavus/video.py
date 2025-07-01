@@ -42,6 +42,7 @@ class TavusVideoService(AIService):
     are routed through Pipecat's media pipeline.
 
     In use cases with DailyTransport, this creates two distinct virtual rooms:
+
     - Tavus room: Contains the Tavus Avatar and the Pipecat Bot
     - User room: Contains the Pipecat Bot and the user
     """
@@ -243,6 +244,7 @@ class TavusVideoService(AIService):
     async def _cancel_send_task(self):
         """Cancel the audio sending task if it exists."""
         if self._send_task:
+            self._queue.cancel()
             await self.cancel_task(self._send_task)
             self._send_task = None
 
