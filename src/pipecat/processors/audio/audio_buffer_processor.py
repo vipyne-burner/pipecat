@@ -14,7 +14,7 @@ configurations and event-driven processing.
 import time
 from typing import Optional
 
-from pipecat.audio.utils import create_default_resampler, interleave_stereo_audio, mix_audio
+from pipecat.audio.utils import create_stream_resampler, interleave_stereo_audio, mix_audio
 from pipecat.frames.frames import (
     AudioRawFrame,
     BotStartedSpeakingFrame,
@@ -106,7 +106,7 @@ class AudioBufferProcessor(FrameProcessor):
 
         self._recording = False
 
-        self._resampler = create_default_resampler()
+        self._resampler = None
 
         self._register_event_handler("on_audio_data")
         self._register_event_handler("on_track_audio_data")
@@ -303,7 +303,12 @@ class AudioBufferProcessor(FrameProcessor):
 
     async def _resample_audio(self, frame: AudioRawFrame) -> bytes:
         """Resample audio frame to the target sample rate."""
-        return await self._resampler.resample(frame.audio, frame.sample_rate, self._sample_rate)
+        if self._resampler is None:
+            self._resampler = create_stream_resampler(
+                in_rate=frame.sample_rate, out_rate=self._sample_rate
+            )
+
+        return await self._resampler.resample(frame.audio)
 
     def _compute_silence(self, from_time: float) -> bytes:
         """Compute silence to insert based on time gap."""
