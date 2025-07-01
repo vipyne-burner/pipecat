@@ -17,7 +17,7 @@ import aiohttp
 from daily.daily import AudioData, VideoFrame
 from loguru import logger
 
-from pipecat.audio.utils import create_default_resampler
+from pipecat.audio.utils import create_stream_resampler
 from pipecat.frames.frames import (
     CancelFrame,
     EndFrame,
@@ -75,7 +75,7 @@ class TavusVideoService(AIService):
         self._client: Optional[TavusTransportClient] = None
 
         self._conversation_id: str
-        self._resampler = create_default_resampler()
+        self._resampler = None
 
         self._audio_buffer = bytearray()
         self._send_task: Optional[asyncio.Task] = None
@@ -255,7 +255,11 @@ class TavusVideoService(AIService):
         chunk_size = int((sample_rate * 2) / 25)
         # We might need to resample if incoming audio doesn't match the
         # transport sample rate.
-        resampled = await self._resampler.resample(frame.audio, frame.sample_rate, sample_rate)
+        if self._resampler is None:
+            self._resampler = create_stream_resampler(
+                in_rate=frame.sample_rate, out_rate=sample_rate
+            )
+        resampled = await self._resampler.resample(frame.audio)
         self._audio_buffer.extend(resampled)
         while len(self._audio_buffer) >= chunk_size:
             chunk = OutputAudioRawFrame(

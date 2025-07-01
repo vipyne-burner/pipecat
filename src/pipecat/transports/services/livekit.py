@@ -18,7 +18,7 @@ from typing import Any, Awaitable, Callable, List, Optional
 from loguru import logger
 from pydantic import BaseModel
 
-from pipecat.audio.utils import create_default_resampler
+from pipecat.audio.utils import create_stream_resampler
 from pipecat.audio.vad.vad_analyzer import VADAnalyzer
 from pipecat.frames.frames import (
     AudioRawFrame,
@@ -513,7 +513,7 @@ class LiveKitInputTransport(BaseInputTransport):
 
         self._audio_in_task = None
         self._vad_analyzer: Optional[VADAnalyzer] = params.vad_analyzer
-        self._resampler = create_default_resampler()
+        self._resampler = None
 
         # Whether we have seen a StartFrame already.
         self._initialized = False
@@ -618,9 +618,12 @@ class LiveKitInputTransport(BaseInputTransport):
         """Convert LiveKit audio frame to Pipecat audio frame."""
         audio_frame = audio_frame_event.frame
 
-        audio_data = await self._resampler.resample(
-            audio_frame.data.tobytes(), audio_frame.sample_rate, self.sample_rate
-        )
+        if self._resampler is None:
+            self._resampler = create_stream_resampler(
+                in_rate=audio_frame.sample_rate, out_rate=self._sample_rate
+            )
+
+        audio_data = await self._resampler.resample(audio_frame.data.tobytes())
 
         return AudioRawFrame(
             audio=audio_data,
