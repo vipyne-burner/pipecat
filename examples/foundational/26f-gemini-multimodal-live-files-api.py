@@ -122,11 +122,11 @@ async def run_example(transport: BaseTransport, _: argparse.Namespace, handle_si
         file_info = await llm.file_api.upload_file(
             sample_file_path, display_name="Sample Test Document"
         )
-        logger.info(f"File uploaded successfully: {file_info['file']['name']}")
+        logger.info(f"File uploaded successfully: {file_info.name}")
 
         # Get file URI and mime type
-        file_uri = file_info["file"]["uri"]
-        mime_type = "text/plain"
+        file_uri = file_info.uri
+        mime_type = file_info.mime_type
 
         # Create context with file reference
         context = OpenAILLMContext(
