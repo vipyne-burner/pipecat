@@ -22,16 +22,16 @@ class SOXRStreamAudioResampler(BaseStreamAudioResampler):
         self.in_rate = in_rate
         self.out_rate = out_rate
         self.last_resample_time = time.time()
-        self.CLEAR_AFTER_MS = 100  # Clear state after 100ms of inactivity
+        self.CLEAR_AFTER_SECS = .2  # Clear state after 200ms of inactivity
         self.soxr_stream = soxr.ResampleStream(
             in_rate=in_rate, out_rate=out_rate, num_channels=1, quality="VHQ", dtype="int16"
         )
 
     def _maybe_clear_internal_state(self):
         current_time = time.time()
-        time_since_last_resample = (current_time - self.last_resample_time) * 1000  # Convert to ms
+        time_since_last_resample = (current_time - self.last_resample_time)
         # If more than CLEAR_AFTER_MS milliseconds have passed, clear the resampler state
-        if time_since_last_resample > self.CLEAR_AFTER_MS:
+        if time_since_last_resample > self.CLEAR_AFTER_SECS:
             self.soxr_stream.clear()
         self.last_resample_time = current_time
 
